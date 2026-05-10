@@ -12,7 +12,7 @@ cd minesweeper
 ./target/release/minesweeper
 ```
 
-#### build the game yourself
+#### build and run the game yourself
 ```angular2html
 cargo build --release
 ./target/release/minesweeper
