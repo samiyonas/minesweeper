@@ -1,14 +1,12 @@
 use ratatui::{ self, Frame };
-use ratatui::layout::{ self, Layout, Constraint };
-use ratatui::prelude::{self, Widget, Rect, Buffer, StatefulWidget};
-use ratatui::style::{ self, Color, Style };
+use ratatui::layout::{ Layout, Constraint };
+use ratatui::prelude::{self, Rect, Buffer, StatefulWidget};
+use ratatui::style::{ Color, Style };
 use ratatui::widgets::{Block, Paragraph};
-use ratatui::text::{ self, Span };
-use ratatui::symbols::{ border };
-use crossterm::event::{ self, KeyCode, KeyEvent };
+use crossterm::event::{ KeyCode };
 use std::io;
 use ratatui::DefaultTerminal;
-use rand::{thread_rng, Rng};
+use rand::{ Rng };
 
 const WIDTH: u16 = 16;
 const HEIGHT: u16 = 30;
@@ -33,6 +31,7 @@ impl Cell {
 enum CellState {
     Hidden,
     Revealed,
+    Neighbour
 }
 struct BoardState {
     cursor_x: u16,
@@ -73,8 +72,10 @@ impl BoardState {
 
     fn graph(&mut self, x: i16, y: i16) {
         let directions: [(i16, i16); 8] = [(0, 1), (1, 0), (0, -1), (-1, 0), (-1, 1), (1, -1), (-1, -1), (1, 1)];
+        if self.game_over {
+            return;
+        }
         if self.grid[x as usize][y as usize].is_mine {
-            self.reveal_mines();
             self.game_over = true;
             return
         }
@@ -97,6 +98,7 @@ impl BoardState {
         }
         if mines > 0 {
             self.grid[x as usize][y as usize].neighbour_mines = mines;
+            self.grid[x as usize][y as usize].cell_state = CellState::Neighbour;
             return
         }
 
@@ -113,7 +115,25 @@ impl BoardState {
             }
         }
     }
-    fn reveal_mines(&mut self) {
+    fn reveal_mines(&mut self, area: Rect, buf: &mut Buffer) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let cell_x = area.x + (x * 2); // Multiplied by 2 for "square" look
+                let cell_y = area.y + y;
+
+                if cell_x < area.right() && cell_y < area.bottom() {
+                    let style = if x == self.cursor_x && y == self.cursor_y {
+                        Style::default().bg(Color::Yellow).fg(Color::Black) // Highlight cursor
+                    } else {
+                        Style::default()
+                    };
+
+                    if self.game_over && self.grid[x as usize][y as usize].is_mine {
+                        buf.set_string(cell_x, cell_y, "x", style);
+                    }
+                }
+            }
+        }
     }
 }
 struct App {
@@ -145,8 +165,34 @@ impl App {
         self.board_state.graph(self.board_state.cursor_x as i16, self.board_state.cursor_y as i16);
     }
     fn draw(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+
+        let layout = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(3)
+        ]).split(area);
+
         let widget = MineSweeperWidget;
-        frame.render_stateful_widget(widget, frame.area(), &mut self.board_state)
+        frame.render_stateful_widget(widget, layout[0], &mut self.board_state);
+
+        let text = if self.board_state.game_over {
+            "BOOM! [Q] Quit | [R] Replay"
+        } else {
+            "Arrows to Move | Enter to Select | [Q] Quit | [R] Replay"
+        };
+
+        let sty = if self.board_state.game_over {
+            Style::default().fg(Color::LightRed)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+
+        let instruction = Paragraph::new(text)
+            .style(sty)
+            .alignment(prelude::Alignment::Left)
+            .block(Block::bordered().border_type(ratatui::widgets::BorderType::Rounded));
+
+        frame.render_widget(instruction, layout[1]);
     }
 
     fn quit(&mut self) {
@@ -205,12 +251,15 @@ impl StatefulWidget for MineSweeperWidget {
                         Style::default()
                     };
 
-                    if state.grid[x as usize][y as usize].cell_state == CellState::Hidden {
-                        buf.set_string(cell_x, cell_y, "■ ", style);
-                    } else if state.grid[x as usize][y as usize].neighbour_mines > 0 {
-                        buf.set_string(cell_x, cell_y, state.grid[x as usize][y as usize].neighbour_mines.to_string(), style);
-                    } else {
-                        buf.set_string(cell_x, cell_y, ".", style);
+                    if state.game_over && state.grid[x as usize][y as usize].is_mine {
+                        state.reveal_mines(area, buf);
+                        continue;
+                    }
+
+                    match state.grid[x as usize][y as usize].cell_state {
+                        CellState::Hidden => buf.set_string(cell_x, cell_y, "■ ", style),
+                        CellState::Neighbour => buf.set_string(cell_x, cell_y, state.grid[x as usize][y as usize].neighbour_mines.to_string(), style),
+                        CellState::Revealed => buf.set_string(cell_x, cell_y, ".", style)
                     }
                 }
             }
