@@ -8,8 +8,17 @@ cd minesweeper
 ```
 
 #### run the release build(if you don't have cargo)
+## macOS
 ```angular2html
 ./target/release/minesweeper
+```
+## linux
+```angular2html
+./target/x86_64-unknown-linux-gnu/release/minesweeper
+```
+## windows
+```angular2html
+./target/x86_64-pc-windows-gnu/release/minesweeper.exe
 ```
 
 #### build and run the game yourself
